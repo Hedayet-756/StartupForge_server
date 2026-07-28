@@ -25,7 +25,19 @@ async function run() {
 
         const database = client.db("StartupForge_db");
         const opportunitiesCollection = database.collection("opportunities");
-        const founderCollection = database.collection("founders");
+        const startupCollection = database.collection("startups");
+        const userCollection = database.collection("user");
+
+        app.get('/api/user', async (req, res) => {
+            try {
+                const user = await userCollection.find();
+                const result = await user.toArray();
+                res.send(result);
+            } catch (error) {
+                console.error("Error fetching user:", error);
+                res.status(500).json({ error: true, message: "Internal Server Error" });
+            }
+        });
 
         app.get('/api/opportunities', async (req, res) => {
             try {
@@ -106,6 +118,12 @@ async function run() {
         //     }
         // });
 
+        app.get('/api/opportunities/:id', async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: ObjectId(id) };
+            const result = await opportunitiesCollection.findOne(query);
+            res.send(result);
+        });
 
         app.post('/api/opportunities', async (req, res) => {
             try {
@@ -122,21 +140,55 @@ async function run() {
             }
         });
 
+        app.get('/api/startups', async (req, res) => {
+            const cursor = startupCollection.find();
+            const result = await cursor.toArray();
+            res.send(result);
+        })
 
-        app.post('/api/founders', async (req, res) => {
+        app.get('/api/my/startups', async (req, res) => {
             try {
-                const founder = req.body;
-                const newFounder = {
-                    ...founder,
+                const query = {};
+                if (req.query.founderId) {
+                    query.founderId = req.query.founderId;
+                }
+                if (req.query.recruiterId) {
+                    query.founderId = req.query.founderId;
+                }
+                console.log("🎯 [Backend Querying]:", query);
+
+                const result = await startupCollection.find(query).toArray();
+
+                console.log("📦 [Backend Result Found]:", result);
+
+                // res.send এর বদলে res.json ব্যবহার করা নিরাপদ
+                res.json(result);
+
+            } catch (error) {
+                // ব্যাকএন্ড টার্মিনালে আসল এররটি প্রিন্ট হবে
+                console.error("❌ MongoDB Fetch Error in /api/my/startups:", error);
+
+                // ফ্রন্টএন্ডের ক্র্যাশ ঠেকাতে একটা প্রোপার JSON এরর রেসপন্স পাঠানো হচ্ছে
+                res.status(500).json({ error: true, message: error.message, data: [] });
+            }
+        });
+
+
+        app.post('/api/startups', async (req, res) => {
+            try {
+                const startup = req.body;
+                const newStartup = {
+                    ...startup,
                     createdAt: new Date(),
                 }
-                const result = await founderCollection.insertOne(newFounder);
+                const result = await startupCollection.insertOne(newStartup);
                 res.send(result);
             } catch (error) {
                 console.error("Database Insert Error:", error);
                 res.status(500).json({ error: true, message: "Database connection failed" });
             }
         });
+
 
 
 
