@@ -27,6 +27,7 @@ async function run() {
         const opportunitiesCollection = database.collection("opportunities");
         const startupCollection = database.collection("startups");
         const userCollection = database.collection("user");
+        const applicationCollection = database.collection("applications");
 
         app.get('/api/user', async (req, res) => {
             try {
@@ -140,6 +141,37 @@ async function run() {
             }
         });
 
+        // applications relevant API
+        app.post('/api/applications', async (req, res) => {
+            try {
+                const application = req.body;
+                const newApplication = {
+                    ...application,
+                    createdAt: new Date(),
+                }
+                const result = await applicationCollection.insertOne(newApplication);
+                res.send(result);
+            } catch (error) {
+                console.error("Database Insert Error:", error);
+                res.status(500).json({ error: true, message: "Database connection failed" });
+            }
+        });
+
+        app.get('/api/applications', async (req, res) => {
+            const query = {};
+            if (req.query.opportunityId) {
+                query.opportunityId = req.query.opportunityId;
+            }
+            if (req.query.opportunityId) {
+                query.opportunityId = req.query.opportunityId;
+            }
+            const cursor = applicationCollection.find(query);
+            const result = await cursor.toArray();
+            res.send(result);
+        });
+
+
+        // startups relevant API
         app.get('/api/startups', async (req, res) => {
             const cursor = startupCollection.find();
             const result = await cursor.toArray();
