@@ -29,6 +29,7 @@ async function run() {
         const userCollection = database.collection("user");
         const applicationCollection = database.collection("applications");
         const planCollection = database.collection('plans');
+        const subscriptionCollection = database.collection('subscriptions');
 
         app.get('/api/user', async (req, res) => {
             try {
@@ -233,6 +234,21 @@ async function run() {
             res.json(plan)
         })
 
+        // subscriptions
+        app.post('/api/subscriptions', async (req, res) => {
+            try {
+                const data = req.body;
+                const subsInfo = {
+                    ...data,
+                    createdAt: new Date(),
+                }
+                const result = await subscriptionCollection.insertOne(subsInfo);
+                res.send(result);
+            } catch (error) {
+                console.error("Database Insert Error:", error);
+                res.status(500).json({ error: true, message: "Database connection failed" });
+            }
+        });
 
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
