@@ -28,6 +28,7 @@ async function run() {
         const startupCollection = database.collection("startups");
         const userCollection = database.collection("user");
         const applicationCollection = database.collection("applications");
+        const planCollection = database.collection('plans');
 
         app.get('/api/user', async (req, res) => {
             try {
@@ -222,7 +223,15 @@ async function run() {
         });
 
 
-
+        //plans
+        app.get('/api/plans', async (req, res) => {
+            const query = {}
+            if (req.query.plan_id) {
+                query.id = req.query.plan_id
+            }
+            const plan = await planCollection.findOne(query)
+            res.json(plan)
+        })
 
 
         // Send a ping to confirm a successful connection
