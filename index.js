@@ -12,6 +12,12 @@ app.get('/', (req, res) => {
     res.send('Hello World!')
 })
 
+const logger = (req, res, next) => {
+    console.log('logger middleware logged', req.params);
+    next();
+};
+
+
 const uri = process.env.MONGODB_URI;
 const client = new MongoClient(uri, {
     serverApi: {
@@ -23,6 +29,10 @@ async function run() {
     try {
         await client.connect();
 
+        // client.connect(() => {
+        //     console.log("🚀 MongoDB Connected");
+        // }).catch(console.dir);
+
         const database = client.db("StartupForge_db");
         const opportunitiesCollection = database.collection("opportunities");
         const startupCollection = database.collection("startups");
@@ -30,17 +40,72 @@ async function run() {
         const applicationCollection = database.collection("applications");
         const planCollection = database.collection('plans');
         const subscriptionCollection = database.collection('subscriptions');
+        const sessionCollection = database.collection('session');
 
-        app.get('/api/user', async (req, res) => {
-            try {
-                const user = await userCollection.find();
-                const result = await user.toArray();
-                res.send(result);
-            } catch (error) {
-                console.error("Error fetching user:", error);
-                res.status(500).json({ error: true, message: "Internal Server Error" });
+        // verify token
+        const verifyToken = async (req, res, next) => {
+            // console.log('header', req.headers);
+            const authHeader = req.headers?.authorization;
+            if (!authHeader) {
+                return res.status(401).json({ error: true, message: "Unauthorized" });
             }
-        });
+            const token = authHeader.split(' ')[1];
+
+            if (!token) {
+                return res.status(401).json({ error: true, message: "Unauthorized" });
+            }
+
+            query = { token: token };
+            const session = await sessionCollection.findOne(query);
+            if (!session) {
+                return res.status(401).json({ error: true, message: "Invalid user" });
+            }
+
+            const userId = session.userId;
+            const userQurey = { _id: userId };
+
+            const user = await userCollection.findOne(userQurey);
+            if (!user) {
+                return res.status(401).json({ error: true, message: "Invalid user" });
+            }
+            // set data in req object
+            req.user = user;
+            next();
+        }
+        // verify token middleware
+        const verifyCollaborator = async (req, res, next) => {
+            if (req.user?.role !== 'collaborator') {
+                return res.status(401).json({ error: true, message: "Unauthorized" });
+            }
+            next();
+        }
+
+        const verifyFounder = async (req, res, next) => {
+            if (req.user?.role !== 'founder') {
+                return res.status(401).json({ error: true, message: "Unauthorized" });
+            }
+            next();
+        }
+
+        const verifyAdmin = async (req, res, next) => {
+            if (req.user?.role !== 'admin') {
+                return res.status(401).json({ error: true, message: "Unauthorized" });
+            }
+            // console.log('admin', req.user);
+            next();
+        }
+
+
+        // app.get('/api/user', async (req, res) => {
+        //     try {
+        //         const user = await userCollection.find();
+        //         const result = await user.toArray();
+        //         res.send(result);
+        //     } catch (error) {
+        //         console.error("Error fetching user:", error);
+        //         res.status(500).json({ error: true, message: "Internal Server Error" });
+        //     }
+        // });
 
         app.get('/api/opportunities', async (req, res) => {
             try {
@@ -60,67 +125,6 @@ async function run() {
                 res.status(500).json({ error: true, message: "Internal Server Error" });
             }
         });
-
-        // app.get('/api/jobs', async (req, res) => {
-        //     try {
-        //         const { companyId, status, jobType, category, search, isRemote, page, perPage } = req.query; // req.query থেকে ডাটাগুলো ডিপ্রাক্ট করে নেওয়া হলো
-
-        //         console.log('server side q', req.query);
-        //         const query = {};
-
-        //         // search related query
-        //         if (search && search !== 'undefined' && search !== '') {
-        //             query.$or = [
-        //                 { title: { $regex: search, $options: 'i' } },
-        //                 { companyName: { $regex: search, $options: 'i' } },
-        //                 { category: { $regex: search, $options: 'i' } }
-        //             ];
-        //         }
-
-        //         // jobType filter related query (undefined চেক সহ)
-        //         if (jobType && jobType !== 'undefined' && jobType !== '') {
-        //             query.type = jobType;
-        //         }
-
-        //         // category filter related query (undefined চেক সহ)
-        //         if (category && category !== 'undefined' && category !== '') {
-        //             query.category = category;
-        //         }
-
-        //         // isRemote filter
-        //         if (isRemote === 'true') {
-        //             query.isRemote = true;
-        //         }
-
-        //         // company related query
-        //         if (companyId && companyId !== 'undefined') {
-        //             query.companyId = companyId;
-        //         }
-        //         if (status && status !== 'undefined') {
-        //             query.status = status;
-        //         }
-
-        //         // pagination related query
-        //         if (page && page !== 'undefined') {
-        //             const pageNumber = parseInt(page);
-        //             const limitNumber = parseInt(perPage) || 12;
-        //             const skipItems = (pageNumber - 1) * limitNumber;
-
-        //             const total = await jobCollection.countDocuments(query);
-        //             const cursor = jobCollection.find(query).skip(skipItems).limit(limitNumber);
-        //             const jobs = await cursor.toArray();
-        //             return res.json({ jobs, total });
-        //         }
-
-        //         const cursor = jobCollection.find(query);
-        //         const result = await cursor.toArray();
-        //         res.json(result);
-        //     } catch (error) {
-        //         console.error("Error fetching jobs:", error);
-        //         res.status(500).json({ error: true, message: "Internal Server Error" });
-        //     }
-        // });
-
         app.get('/api/opportunities/:id', async (req, res) => {
             const id = req.params.id;
             const query = { _id: ObjectId(id) };
@@ -159,10 +163,14 @@ async function run() {
             }
         });
 
-        app.get('/api/applications', async (req, res) => {
+        app.get('/api/applications', verifyToken, verifyCollaborator, async (req, res) => {
             const query = {};
             if (req.query.opportunityId) {
                 query.opportunityId = req.query.opportunityId;
+
+                if (req.user._id.toString() !== req.query.opportunityId) {
+                    return res.status(401).json({ error: true, message: "Unauthorized" });
+                }
             }
             if (req.query.opportunityId) {
                 query.opportunityId = req.query.opportunityId;
@@ -174,10 +182,25 @@ async function run() {
 
 
         // startups relevant API
-        app.get('/api/startups', async (req, res) => {
+        // app.get('/api/startups', async (req, res) => {
+        //     const cursor = startupCollection.find();
+        //     const result = await cursor.toArray();
+        //     res.send(result);
+        // })
+
+        app.get('/api/startups', verifyToken, async (req, res) => {
             const cursor = startupCollection.find();
-            const result = await cursor.toArray();
-            res.send(result);
+            const startups = await cursor.toArray();
+
+            for (const startup of startups) {
+                const filter = {
+                    startupId: startup._id.toString()
+                }
+                const opportunityCount = await opportunitiesCollection.countDocuments(filter);
+                startup.opportunityCount = opportunityCount;
+            }
+
+            res.send(startups);
         })
 
         app.get('/api/my/startups', async (req, res) => {
@@ -186,7 +209,7 @@ async function run() {
                 if (req.query.founderId) {
                     query.founderId = req.query.founderId;
                 }
-                if (req.query.recruiterId) {
+                if (req.query.founderId) {
                     query.founderId = req.query.founderId;
                 }
                 console.log("🎯 [Backend Querying]:", query);
@@ -207,15 +230,34 @@ async function run() {
             }
         });
 
-
         app.post('/api/startups', async (req, res) => {
             try {
                 const startup = req.body;
-                const newStartup = {
+                const newStartupData = {
                     ...startup,
                     createdAt: new Date(),
                 }
-                const result = await startupCollection.insertOne(newStartup);
+                const result = await startupCollection.insertOne(newStartupData);
+                res.send(result);
+            } catch (error) {
+                console.error("Database Insert Error:", error);
+                res.status(500).json({ error: true, message: "Database connection failed" });
+            }
+        });
+
+
+        app.patch('/api/startups/:id', logger, verifyToken, verifyAdmin, async (req, res) => {
+            try {
+                const id = req.params.id;
+                const updatedStartup = req.body;
+                const filter = { _id: new ObjectId(id) };
+
+                const updateDoc = {
+                    $set: {
+                        status: updatedStartup.status,
+                    }
+                };
+                const result = await startupCollection.updateOne(filter, updateDoc);
                 res.send(result);
             } catch (error) {
                 console.error("Database Insert Error:", error);
@@ -243,12 +285,20 @@ async function run() {
                     createdAt: new Date(),
                 }
                 const result = await subscriptionCollection.insertOne(subsInfo);
-                res.send(result);
+
+                // Update the user plan information
+                const filter = { email: data.email };
+                // update the plan field
+                const updateDocument = { $set: { plan: data.planId } };
+
+                const updateResult = await userCollection.updateOne(filter, updateDocument);
+                res.send(updateResult);
             } catch (error) {
                 console.error("Database Insert Error:", error);
                 res.status(500).json({ error: true, message: "Database connection failed" });
             }
         });
+
 
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
@@ -262,3 +312,4 @@ run().catch(console.dir);
 app.listen(port, () => {
     console.log(`Example app listening on port ${port}`)
 })
+// module.exports = app;
