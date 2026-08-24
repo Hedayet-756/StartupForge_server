@@ -132,6 +132,21 @@ async function run() {
             res.send(result);
         });
 
+        app.post('/api/opportunities', async (req, res) => {
+            try {
+                const opportunity = req.body;
+                const newOpportunity = {
+                    ...opportunity, createdAt: new Date()
+                }
+                const result = await opportunitiesCollection.insertOne(newOpportunity);
+                // ফ্রন্টএন্ডে পিওর JSON অবজেক্ট পাঠানোর জন্য res.json ব্যবহার করুন
+                res.json(result);
+            } catch (error) {
+                console.error("Database Insert Error:", error);
+                res.status(500).json({ error: true, message: "Database connection failed" });
+            }
+        });
+
         app.patch('/api/opportunities/:id', logger, verifyToken, verifyFounder, async (req, res) => {
             try {
                 const id = req.params.id;
@@ -154,17 +169,14 @@ async function run() {
             }
         });
 
-        app.post('/api/opportunities', async (req, res) => {
+        app.delete('/api/opportunities/:id', logger, verifyToken, verifyFounder, async (req, res) => {
             try {
-                const opportunity = req.body;
-                const newOpportunity = {
-                    ...opportunity, createdAt: new Date()
-                }
-                const result = await opportunitiesCollection.insertOne(newOpportunity);
-                // ফ্রন্টএন্ডে পিওর JSON অবজেক্ট পাঠানোর জন্য res.json ব্যবহার করুন
-                res.json(result);
+                const id = req.params.id;
+                const filter = { _id: new ObjectId(id) };
+                const result = await opportunitiesCollection.deleteOne(filter);
+                res.send(result);
             } catch (error) {
-                console.error("Database Insert Error:", error);
+                console.error("Database Delete Error:", error);
                 res.status(500).json({ error: true, message: "Database connection failed" });
             }
         });
