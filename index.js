@@ -132,6 +132,28 @@ async function run() {
             res.send(result);
         });
 
+        app.patch('/api/opportunities/:id', logger, verifyToken, verifyFounder, async (req, res) => {
+            try {
+                const id = req.params.id;
+                const updatedOpportunity = req.body;
+                const filter = { _id: new ObjectId(id) };
+
+                const updateDoc = {
+                    $set: updatedOpportunity,
+                    // পুরনো ফিল্ডগুলো ডেটাবেজ থেকে মুছে ফেলার জন্য $unset ব্যবহার করা হলো
+                    $unset: {
+                        workType: "",
+                        commitmentLevel: ""
+                    }
+                };
+                const result = await opportunitiesCollection.updateOne(filter, updateDoc);
+                res.send(result);
+            } catch (error) {
+                console.error("Database Insert Error:", error);
+                res.status(500).json({ error: true, message: "Database connection failed" });
+            }
+        });
+
         app.post('/api/opportunities', async (req, res) => {
             try {
                 const opportunity = req.body;
@@ -217,8 +239,6 @@ async function run() {
                 const result = await startupCollection.find(query).toArray();
 
                 console.log("📦 [Backend Result Found]:", result);
-
-                // res.send এর বদলে res.json ব্যবহার করা নিরাপদ
                 res.json(result);
 
             } catch (error) {
@@ -254,7 +274,7 @@ async function run() {
 
                 const updateDoc = {
                     $set: {
-                        status: updatedStartup.status,
+                        isApproved: updatedStartup.isApproved,
                     }
                 };
                 const result = await startupCollection.updateOne(filter, updateDoc);
