@@ -41,6 +41,7 @@ async function run() {
         const planCollection = database.collection('plans');
         const subscriptionCollection = database.collection('subscriptions');
         const sessionCollection = database.collection('session');
+        const bookmarkCollection = database.collection('bookmarks');
 
         // verify token
         const verifyToken = async (req, res, next) => {
@@ -55,7 +56,7 @@ async function run() {
                 return res.status(401).json({ error: true, message: "Unauthorized" });
             }
 
-            query = { token: token };
+            const query = { token };
             const session = await sessionCollection.findOne(query);
             if (!session) {
                 return res.status(401).json({ error: true, message: "Invalid user" });
@@ -343,7 +344,90 @@ async function run() {
             }
         });
 
+        app.post('/api/bookmarks', logger, verifyToken, verifyCollaborator, async (req, res) => {
+            try {
+                const { opportunityId, opportunityTitle, startupName } = req.body;
 
+                if (!opportunityId) {
+                    return res.status(400).json({
+                        error: true,
+                        message: "Opportunity ID is required",
+                    });
+                }
+
+                // একই opportunity আগে bookmark করা হয়েছে কিনা
+                const existingBookmark = await bookmarkCollection.findOne({
+                    userId: req.user._id,
+                    opportunityId: opportunityId,
+                });
+
+                if (existingBookmark) {
+                    return res.status(409).json({
+                        error: true,
+                        message: "Opportunity already bookmarked",
+                    });
+                }
+
+                const newBookmark = {
+                    userId: req.user._id,
+                    opportunityId,
+                    opportunityTitle,
+                    startupName,
+                    createdAt: new Date(),
+                };
+
+                const result = await bookmarkCollection.insertOne(newBookmark);
+
+                res.status(201).send({
+                    success: true,
+                    message: "Bookmark saved successfully",
+                    bookmarkId: result.insertedId,
+                });
+
+            } catch (error) {
+                console.error("Bookmark Insert Error:", error);
+
+                res.status(500).json({
+                    error: true,
+                    message: "Database connection failed",
+                });
+            }
+        }
+        );
+
+        app.delete('/api/bookmarks/:opportunityId', logger, verifyToken, verifyCollaborator, async (req, res) => {
+            try {
+                const { opportunityId } = req.params;
+
+                const filter = {
+                    userId: req.user._id,
+                    opportunityId: opportunityId,
+                };
+
+                const result = await bookmarkCollection.deleteOne(filter);
+
+                if (result.deletedCount === 0) {
+                    return res.status(404).json({
+                        error: true,
+                        message: "Bookmark not found",
+                    });
+                }
+
+                res.send({
+                    success: true,
+                    message: "Bookmark removed successfully",
+                });
+
+            } catch (error) {
+                console.error("Bookmark Delete Error:", error);
+
+                res.status(500).json({
+                    error: true,
+                    message: "Database connection failed",
+                });
+            }
+        }
+        );
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
