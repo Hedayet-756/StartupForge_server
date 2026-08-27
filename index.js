@@ -127,7 +127,7 @@ async function run() {
         });
         app.get('/api/opportunities/:id', async (req, res) => {
             const id = req.params.id;
-            const query = { _id: ObjectId(id) };
+            const query = { _id: new ObjectId(id) };
             const result = await opportunitiesCollection.findOne(query);
             res.send(result);
         });
@@ -212,6 +212,18 @@ async function run() {
             const cursor = applicationCollection.find(query);
             const result = await cursor.toArray();
             res.send(result);
+        });
+
+        app.delete('/api/applications/:id', logger, verifyToken, verifyCollaborator, async (req, res) => {
+            try {
+                const id = req.params.id;
+                const filter = { _id: new ObjectId(id) };
+                const result = await applicationCollection.deleteOne(filter);
+                res.send(result);
+            } catch (error) {
+                console.error("Database Delete Error:", error);
+                res.status(500).json({ error: true, message: "Database connection failed" });
+            }
         });
 
 
