@@ -73,6 +73,52 @@ async function run() {
             req.user = user;
             next();
         }
+
+        // verify token (Updated)
+        // const verifyToken = async (req, res, next) => {
+        //     let token = null;
+
+        //     // ১. প্রথমে হেডার থেকে টোকেন খোঁজার চেষ্টা করবে
+        //     const authHeader = req.headers?.authorization;
+        //     if (authHeader && authHeader.startsWith('Bearer ')) {
+        //         token = authHeader.split(' ')[1];
+        //     }
+
+        //     // ২. হেডার না পেলে রিকোয়েস্টের কুকি বা কুয়েরি থেকে টোকেন খোঁজার ব্যাকআপ ব্যবস্থা
+        //     if (!token && req.headers?.cookie) {
+        //         // কুকি স্ট্রিং থেকে better-auth.session_token বা সাধারণ token বের করা
+        //         const cookies = req.headers.cookie.split(';');
+        //         for (let cookie of cookies) {
+        //             const [key, value] = cookie.trim().split('=');
+        //             if (key === 'better-auth.session_token' || key === 'token') {
+        //                 token = value;
+        //                 break;
+        //             }
+        //         }
+        //     }
+
+        //     if (!token) {
+        //         return res.status(401).json({ error: true, message: "Unauthorized: No token provided" });
+        //     }
+
+        //     const query = { token };
+        //     const session = await sessionCollection.findOne(query);
+        //     if (!session) {
+        //         return res.status(401).json({ error: true, message: "Invalid session" });
+        //     }
+
+        //     const userId = session.userId;
+        //     const userQurey = { _id: userId };
+
+        //     const user = await userCollection.findOne(userQurey);
+        //     if (!user) {
+        //         return res.status(401).json({ error: true, message: "Invalid user" });
+        //     }
+
+        //     // req অবজেক্টে ইউজার এবং রোল সেট করে দেওয়া
+        //     req.user = user;
+        //     next();
+        // }
         // verify token middleware
         const verifyCollaborator = async (req, res, next) => {
             if (req.user?.role !== 'collaborator') {
@@ -96,36 +142,202 @@ async function run() {
             next();
         }
 
+        // user relevant API
+        app.get('/api/user', verifyToken, verifyAdmin, async (req, res) => {
+            try {
+                const user = await userCollection.find();
+                const result = await user.toArray();
+                res.send(result);
+            } catch (error) {
+                console.error("Error fetching user:", error);
+                res.status(500).json({ error: true, message: "Internal Server Error" });
+            }
+        });
 
-        // app.get('/api/user', async (req, res) => {
-        //     try {
-        //         const user = await userCollection.find();
-        //         const result = await user.toArray();
-        //         res.send(result);
-        //     } catch (error) {
-        //         console.error("Error fetching user:", error);
-        //         res.status(500).json({ error: true, message: "Internal Server Error" });
-        //     }
-        // });
+        app.patch('/api/user/:id/role', verifyToken, verifyAdmin, async (req, res) => {
+            try {
+                const userId = req.params.id;
+                const { role } = req.body;
 
+                if (!role) {
+                    return res.status(400).json({
+                        success: false,
+                        message: "Role is required"
+                    });
+                }
+
+                if (!ObjectId.isValid(userId)) {
+                    return res.status(400).json({
+                        success: false,
+                        message: "Invalid user ID"
+                    });
+                }
+
+                const query = {
+                    _id: new ObjectId(userId)
+                };
+
+                const updateDoc = {
+                    $set: {
+                        role,
+                        updatedAt: new Date()
+                    }
+                };
+
+                const result = await userCollection.updateOne(
+                    query,
+                    updateDoc
+                );
+
+                if (result.matchedCount === 0) {
+                    return res.status(404).json({
+                        success: false,
+                        message: "User not found"
+                    });
+                }
+
+                res.json({
+                    success: true,
+                    message: "User role updated successfully",
+                    result
+                });
+
+            } catch (error) {
+                console.error("Error updating user role:", error);
+
+                res.status(500).json({
+                    error: true,
+                    message: "Internal Server Error"
+                });
+            }
+        });
+
+        app.delete('/api/user/:id', verifyToken, verifyAdmin, async (req, res) => {
+            try {
+                const userId = req.params.id;
+
+                if (!ObjectId.isValid(userId)) {
+                    return res.status(400).json({
+                        success: false,
+                        message: "Invalid user ID"
+                    });
+                }
+
+                const result = await userCollection.deleteOne({
+                    _id: new ObjectId(userId)
+                });
+
+                if (result.deletedCount === 0) {
+                    return res.status(404).json({
+                        success: false,
+                        message: "User not found"
+                    });
+                }
+
+                res.json({
+                    success: true,
+                    message: "User deleted successfully",
+                    result
+                });
+
+            } catch (error) {
+                console.error("Error deleting user:", error);
+
+                res.status(500).json({
+                    error: true,
+                    message: "Internal Server Error"
+                });
+            }
+        });
+
+        // opportunities relevant API
         app.get('/api/opportunities', async (req, res) => {
             try {
                 const query = {};
+
                 if (req.query.founderId) {
                     query.founderId = req.query.founderId;
                 }
                 if (req.query.status) {
                     query.status = req.query.status;
                 }
-                const cursor = opportunitiesCollection.find(query);
-                const result = await cursor.toArray();
-                res.json(result);
+
+                // Category ফিল্টার
+                if (req.query.category && req.query.category !== 'all') {
+                    query.category = req.query.category;
+                }
+
+                // Type ফিল্টার
+                if (req.query.type && req.query.type !== 'all-types') {
+                    query.type = req.query.type;
+                }
+
+                // Remote ফিল্টার (boolean রূপান্তর নিশ্চিত করা)
+                if (req.query.isRemote === 'true' || req.query.isRemote === true) {
+                    query.location = { $regex: 'remote', $options: 'i' };
+                }
+
+                // Search ফিল্টার
+                if (req.query.search) {
+                    const searchRegex = new RegExp(req.query.search, 'i');
+                    query.$or = [
+                        { roleTitle: searchRegex },
+                        { startupName: searchRegex },
+                        { description: searchRegex }
+                    ];
+                }
+
+                const page = parseInt(req.query.page) || 1;
+                const limit = parseInt(req.query.limit) || 12;
+                const skip = (page - 1) * limit;
+
+                // ⚠️ মূল ঠিক করার জায়গা: countDocuments(query) এ ফিল্টার অবজেক্ট পাস করতে হবে
+                const total = await opportunitiesCollection.countDocuments(query);
+
+                // নির্দিষ্ট পেজ ও লিমি트 অনুযায়ী ডাটা আনা
+                const cursor = opportunitiesCollection.find(query).skip(skip).limit(limit);
+                const opportunities = await cursor.toArray();
+
+                let userBookmarks = [];
+                const authHeader = req.headers?.authorization;
+                if (authHeader) {
+                    try {
+                        const token = authHeader.split(' ')[1];
+                        if (token) {
+                            const session = await sessionCollection.findOne({ token });
+                            if (session) {
+                                const userId = session.userId;
+                                const userIdObj = new ObjectId(userId);
+                                const userIdStr = userId.toString();
+
+                                const bookmarks = await bookmarkCollection.find({
+                                    userId: { $in: [userIdObj, userIdStr] }
+                                }).toArray();
+
+                                userBookmarks = bookmarks.map(b => b.opportunityId.toString());
+                            }
+                        }
+                    } catch (err) {
+                        console.error("Optional auth/bookmark check error:", err);
+                    }
+                }
+
+                const result = opportunities.map(opp => ({
+                    ...opp,
+                    isBookmarked: userBookmarks.includes(opp._id.toString())
+                }));
+
+                res.json({
+                    opportunities: result,
+                    total
+                });
             }
             catch (error) {
                 console.error("Error fetching opportunities:", error);
                 res.status(500).json({ error: true, message: "Internal Server Error" });
             }
         });
+
         app.get('/api/opportunities/:id', async (req, res) => {
             const id = req.params.id;
             const query = { _id: new ObjectId(id) };
@@ -133,7 +345,7 @@ async function run() {
             res.send(result);
         });
 
-        app.post('/api/opportunities', async (req, res) => {
+        app.post('/api/opportunities', verifyToken, verifyFounder, async (req, res) => {
             try {
                 const opportunity = req.body;
                 const newOpportunity = {
@@ -183,11 +395,18 @@ async function run() {
         });
 
         // applications relevant API
-        app.post('/api/applications', async (req, res) => {
+        app.post('/api/applications', verifyToken, verifyCollaborator, async (req, res) => {
             try {
                 const application = req.body;
+                const userId = req.user?.id || req.user?._id;
+
+                if (!userId) {
+                    return res.status(401).json({ error: true, message: "Unauthorized user" });
+                }
                 const newApplication = {
                     ...application,
+                    applicantId: userId.toString(),
+                    applicantEmail: req.user.email,
                     createdAt: new Date(),
                 }
                 const result = await applicationCollection.insertOne(newApplication);
@@ -198,24 +417,46 @@ async function run() {
             }
         });
 
-        app.get('/api/applications', verifyToken, verifyCollaborator, async (req, res) => {
-            const query = {};
-            if (req.query.opportunityId) {
-                query.opportunityId = req.query.opportunityId;
+        app.get('/api/applications', verifyToken, async (req, res) => {
+            try {
+                const query = {};
 
-                if (req.user._id.toString() !== req.query.opportunityId) {
-                    return res.status(401).json({ error: true, message: "Unauthorized" });
+                if (req.query.applicantId) {
+                    if (req.user._id.toString() !== req.query.applicantId) {
+                        return res.status(401).json({ error: true, message: "Unauthorized" });
+                    }
+                    query.applicantId = req.query.applicantId;
                 }
+
+                if (req.query.opportunityId) {
+                    query.opportunityId = req.query.opportunityId;
+                }
+
+                // নতুন যোগ করা হলো: startupName দিয়ে ফিল্টার করার জন্য
+                if (req.query.startupName) {
+                    query.startupName = req.query.startupName;
+                }
+
+                console.log("Application Query:", query);
+
+                const cursor = applicationCollection.find(query);
+                const result = await cursor.toArray();
+
+                console.log("Applications Found:", result);
+
+                res.send(result);
+
+            } catch (error) {
+                console.error("Get Applications Error:", error);
+
+                res.status(500).json({
+                    error: true,
+                    message: "Failed to fetch applications"
+                });
             }
-            if (req.query.opportunityId) {
-                query.opportunityId = req.query.opportunityId;
-            }
-            const cursor = applicationCollection.find(query);
-            const result = await cursor.toArray();
-            res.send(result);
         });
 
-        app.delete('/api/applications/:id', logger, verifyToken, verifyCollaborator, async (req, res) => {
+        app.delete('/api/applications/:id', logger, verifyToken, async (req, res) => {
             try {
                 const id = req.params.id;
                 const filter = { _id: new ObjectId(id) };
@@ -275,7 +516,7 @@ async function run() {
             }
         });
 
-        app.post('/api/startups', async (req, res) => {
+        app.post('/api/startups', verifyToken, verifyFounder, async (req, res) => {
             try {
                 const startup = req.body;
                 const newStartupData = {
@@ -291,7 +532,7 @@ async function run() {
         });
 
 
-        app.patch('/api/startups/:id', logger, verifyToken, verifyAdmin, async (req, res) => {
+        app.patch('/api/startups/:id', logger, verifyToken, async (req, res) => {
             try {
                 const id = req.params.id;
                 const updatedStartup = req.body;
@@ -319,10 +560,11 @@ async function run() {
             }
             const plan = await planCollection.findOne(query)
             res.json(plan)
+            console.log('plan', plan)
         })
 
         // subscriptions
-        app.post('/api/subscriptions', async (req, res) => {
+        app.post('/api/subscriptions', verifyToken, async (req, res) => {
             try {
                 const data = req.body;
                 const subsInfo = {
@@ -332,11 +574,12 @@ async function run() {
                 const result = await subscriptionCollection.insertOne(subsInfo);
 
                 // Update the user plan information
-                const filter = { email: data.email };
+                const filter = { email: { $regex: new RegExp(`^${data.email}$`, "i") } };
                 // update the plan field
-                const updateDocument = { $set: { plan: data.planId } };
+                const updateDocument = { $set: { plan: data.plan } };
 
                 const updateResult = await userCollection.updateOne(filter, updateDocument);
+                console.log("User Plan Update Result:", updateResult);
                 res.send(updateResult);
             } catch (error) {
                 console.error("Database Insert Error:", error);
@@ -344,6 +587,23 @@ async function run() {
             }
         });
 
+        app.get('/api/subscriptions', verifyToken, async (req, res) => {
+            try {
+                const query = {};
+                if (req.query.email) {
+                    query.email = req.query.email;
+                }
+
+                // subscriptionCollection থেকে ডেটা খোঁজা
+                const subscriptions = await subscriptionCollection.find(query).toArray();
+                res.json(subscriptions);
+            } catch (error) {
+                console.error("Error fetching subscriptions:", error);
+                res.status(500).json({ error: true, message: "Internal Server Error" });
+            }
+        });
+
+        // bookmarks relevant API
         app.post('/api/bookmarks', logger, verifyToken, verifyCollaborator, async (req, res) => {
             try {
                 const { opportunityId, opportunityTitle, startupName } = req.body;
@@ -428,8 +688,27 @@ async function run() {
             }
         }
         );
+
+        app.get('/api/bookmarks', logger, verifyToken, verifyCollaborator, async (req, res) => {
+            try {
+                // ইউজার আইডি দিয়ে কুয়েরি শুরু করা হলো যাতে শুধু এই ইউজারের বুকমার্কগুলোই আসে
+                const query = { userId: req.user._id };
+
+                if (req.query.opportunityId) {
+                    query.opportunityId = req.query.opportunityId;
+                }
+
+                const cursor = bookmarkCollection.find(query);
+                const result = await cursor.toArray();
+                res.send(result);
+            } catch (error) {
+                console.error("Error fetching bookmarks:", error);
+                res.status(500).json({ error: true, message: "Internal Server Error" });
+            }
+        });
+
         // Send a ping to confirm a successful connection
-        await client.db("admin").command({ ping: 1 });
+        // await client.db("admin").command({ ping: 1 });
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
     } finally {
 
